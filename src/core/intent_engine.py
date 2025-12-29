@@ -1,13 +1,12 @@
 """
-Intent Parsing Engine
+Intent Parsing Engine - GEMINI VERSION
 Phase 2: Task 2.2 - Convert transcript to strict JSON command
-The LLM is used as a "Translation Layer," not a "Knowledge Base"
 """
 
 import json
 from typing import Optional, List
 from pydantic import BaseModel, Field
-from openai import AsyncOpenAI
+import google.generativeai as genai
 from src.config.settings import settings
 from src.config.constants import IntentType, UrgencyLevel
 import logging
@@ -18,14 +17,13 @@ logger = logging.getLogger(__name__)
 class IntentSchema(BaseModel):
     """
     Target Schema for deterministic intent extraction
-    From Phase 2, Task 2.2
     """
     intent_type: str = Field(
         description="One of: ORDER_MEDICINE, CHECK_BALANCE, ORDER_STATUS, UNKNOWN"
     )
     items: List[str] = Field(
         default_factory=list,
-        description="List of medicine names mentioned, e.g., ['Metformin 500mg']"
+        description="List of medicine names mentioned"
     )
     quantity: Optional[int] = Field(
         default=None,
@@ -51,13 +49,24 @@ class IntentSchema(BaseModel):
 
 class IntentEngine:
     """
-    Deterministic Intent Parser
-    Uses GPT-4o for superior reasoning and intent extraction
+    Deterministic Intent Parser using Google Gemini
     """
     
     def __init__(self):
-        self.client = AsyncOpenAI(api_key=settings.OPENAI_API_KEY)
-        self.model = settings.OPENAI_MODEL
+        # Configure Gemini
+        genai.configure(api_key=settings.GEMINI_API_KEY)
+        
+        # Initialize the model
+        self.model = genai.GenerativeModel(
+            model_name=settings.GEMINI_MODEL,
+            generation_config={
+                "temperature": 0.1,  # Low temperature for consistency
+                "top_p": 0.95,
+                "top_k": 40,
+                "max_output_tokens": 1024,
+                "response_mime_type": "application/json",  # Force JSON output
+            }
+        )
         
     async def parse_intent(
         self, 
@@ -70,30 +79,40 @@ class IntentEngine:
         Args:
             transcript: The transcribed user speech
             user_context: Optional context (medicine history, etc.)
-                         Uses internal_id, NOT PII
         """
         
-        system_prompt = self._build_system_prompt()
-        user_prompt = self._build_user_prompt(transcript, user_context)
+        prompt = self._build_prompt(transcript, user_context)
         
         try:
-            response = await self.client.chat.completions.create(
-                model=self.model,
-                messages=[
-                    {"role": "system", "content": system_prompt},
-                    {"role": "user", "content": user_prompt}
-                ],
-                response_format={"type": "json_object"},
-                temperature=0.1,  # Low temperature for consistency
-                max_tokens=500
-            )
+            # Call Gemini
+            response = self.model.generate_content(prompt)
             
-            result = json.loads(response.choices[0].message.content)
+            # Parse the JSON response
+            result_text = response.text.strip()
+            
+            # Sometimes Gemini wraps JSON in markdown code blocks
+            if result_text.startswith("```json"):
+                result_text = result_text[7:]
+            if result_text.startswith("```"):
+                result_text = result_text[3:]
+            if result_text.endswith("```"):
+                result_text = result_text[:-3]
+            
+            result = json.loads(result_text.strip())
             intent = IntentSchema(**result)
             
             logger.info(f"Parsed intent: {intent.intent_type} with confidence {intent.confidence_score}")
             
             return intent
+            
+        except json.JSONDecodeError as e:
+            logger.error(f"Failed to parse Gemini response as JSON: {e}")
+            logger.error(f"Raw response: {response.text if response else 'None'}")
+            return IntentSchema(
+                intent_type=IntentType.UNKNOWN,
+                confidence_score=0.0,
+                clarification_needed="Failed to parse response"
+            )
             
         except Exception as e:
             logger.error(f"Intent parsing failed: {e}")
@@ -103,46 +122,52 @@ class IntentEngine:
                 clarification_needed="System error during intent parsing"
             )
     
-    def _build_system_prompt(self) -> str:
-        return """You are an intent parser for Sahayak, a voice assistant helping elderly users in India order medicines.
+    def _build_prompt(self, transcript: str, user_context: dict = None) -> str:
+        """Build the prompt for Gemini"""
+        
+        prompt = f"""You are an intent parser for Sahayak, a voice assistant helping elderly users in India order medicines.
 
 Your ONLY job is to convert spoken transcripts into a strict JSON structure. You are a Translation Layer, NOT a Knowledge Base.
 
 RULES:
 1. Only detect these intents: ORDER_MEDICINE, CHECK_BALANCE, ORDER_STATUS, UNKNOWN
-2. If the user mentions emergency, injury, chest pain, or asks to call 911/112 -> Still output UNKNOWN but note "emergency_detected": true
+2. If the user mentions emergency, injury, chest pain, or asks to call 911/112 -> Still output UNKNOWN but set "emergency_detected": true in raw_entities
 3. If the user is just chatting or asking unrelated questions -> UNKNOWN
 4. Be generous with medicine name matching - elderly users say things like:
    - "heart medicine" might mean Atorvastatin
    - "sugar ki goli" might mean Metformin
    - "BP tablet" might mean Amlodipine
    - "calcium wali" might mean Shelcal
-5. Set confidence_score based on how clear the request is
+   - "haddi ki dawai" might mean calcium tablets
+5. Set confidence_score based on how clear the request is (0.0 to 1.0)
 6. If something is unclear, specify what needs clarification
 
-OUTPUT FORMAT (strict JSON):
-{
-    "intent_type": "ORDER_MEDICINE|CHECK_BALANCE|ORDER_STATUS|UNKNOWN",
-    "items": ["Medicine Name"],
-    "quantity": 1,
-    "confidence_score": 0.85,
-    "urgency": "standard|immediate",
-    "clarification_needed": null or "what needs to be asked",
-    "raw_entities": {}
-}"""
-
-    def _build_user_prompt(self, transcript: str, user_context: dict = None) -> str:
-        prompt = f"TRANSCRIPT: \"{transcript}\"\n\n"
+"""
         
+        # Add user context if available
         if user_context:
             prompt += "USER CONTEXT:\n"
             if user_context.get("medicine_history"):
                 prompt += f"- Previously ordered medicines: {user_context['medicine_history']}\n"
             if user_context.get("internal_id"):
                 prompt += f"- User ID: {user_context['internal_id']}\n"
+            prompt += "\n"
         
-        prompt += "\nParse this transcript into the JSON structure."
-        
+        prompt += f"""TRANSCRIPT: "{transcript}"
+
+OUTPUT FORMAT (respond with ONLY this JSON, no other text):
+{{
+    "intent_type": "ORDER_MEDICINE|CHECK_BALANCE|ORDER_STATUS|UNKNOWN",
+    "items": ["Medicine Name"],
+    "quantity": 1,
+    "confidence_score": 0.85,
+    "urgency": "standard",
+    "clarification_needed": null,
+    "raw_entities": {{}}
+}}
+
+Parse the transcript and respond with JSON only:"""
+
         return prompt
     
     def needs_clarification(self, intent: IntentSchema) -> bool:
@@ -150,7 +175,7 @@ OUTPUT FORMAT (strict JSON):
         return intent.confidence_score < settings.CONFIDENCE_THRESHOLD
     
     def should_refuse(self, intent: IntentSchema) -> bool:
-        """Check if we should safely refuse (< 90% confidence)"""
+        """Check if we should safely refuse (< 90% confidence for unknown)"""
         return intent.confidence_score < settings.SAFE_REFUSAL_THRESHOLD and \
                intent.intent_type == IntentType.UNKNOWN
 
@@ -171,13 +196,6 @@ class MedicineResolver:
     ) -> List[dict]:
         """
         Match spoken medicine names to catalog items
-        
-        Args:
-            medicine_names: List of names from intent parser
-            user_id: Internal user ID for history lookup
-        
-        Returns:
-            List of matched medicines with SKU, price, etc.
         """
         resolved = []
         
@@ -203,11 +221,9 @@ class MedicineResolver:
     async def _match_from_history(self, name: str, user_id: str) -> Optional[dict]:
         """Check if this matches something user has ordered before"""
         # Implementation would query UserMedicineHistory
-        # Checking medicine_name, generic_name, and user_aliases
         pass
     
     async def _match_from_catalog(self, name: str) -> Optional[dict]:
         """Fuzzy match against medicine catalog"""
         # Implementation would query MedicineCatalog
-        # Using aliases and fuzzy string matching
         pass

@@ -1,4 +1,4 @@
-# Sahayak Environment Configuration
+# Sahayak Environment Configuration - GEMINI VERSION
 
 # Application
 APP_NAME=Sahayak
@@ -6,20 +6,23 @@ ENVIRONMENT=development
 DEBUG=true
 
 # Database
-DATABASE_URL=postgresql://sahayak:sahayak_password@localhost:5432/sahayak_db
+DATABASE_URL=postgresql://sahayak:sahayak_password@db:5432/sahayak_db
 
-# OpenAI
-OPENAI_API_KEY=sk-your-openai-api-key-here
+# ============== GEMINI API (NEW!) ==============
+GEMINI_API_KEY=your-gemini-api-key-here
+GEMINI_MODEL=gemini-1.5-flash
 
-# Twilio (Voice)
-TWILIO_ACCOUNT_SID=your-twilio-account-sid
-TWILIO_AUTH_TOKEN=your-twilio-auth-token
-TWILIO_PHONE_NUMBER=+1234567890
+# ============== LOCAL WHISPER CONFIG ==============
+# Model sizes: tiny, base, small, medium, large
+# Larger = more accurate but slower and uses more RAM
+WHISPER_MODEL_SIZE=base
+WHISPER_DEVICE=cpu
+WHISPER_COMPUTE_TYPE=int8
 
-# WhatsApp Business API (optional)
-WHATSAPP_ACCESS_TOKEN=your-whatsapp-access-token
-WHATSAPP_PHONE_NUMBER_ID=your-phone-number-id
-WHATSAPP_VERIFY_TOKEN=sahayak_verify
+# Twilio (Voice - optional for now)
+TWILIO_ACCOUNT_SID=
+TWILIO_AUTH_TOKEN=
+TWILIO_PHONE_NUMBER=
 
 # Voice Settings
 SILENCE_THRESHOLD_SECONDS=1.5
@@ -29,9 +32,6 @@ SAFE_REFUSAL_THRESHOLD=0.90
 # Wallet Settings
 MAX_TRANSACTION_AMOUNT=2000
 
-# Notifications
-WHATSAPP_ENABLED=true
-SMS_ENABLED=true
-
-# ngrok (for development webhooks)
-NGROK_AUTHTOKEN=your-ngrok-auth-token
+# Notifications (disabled for testing)
+WHATSAPP_ENABLED=false
+SMS_ENABLED=false

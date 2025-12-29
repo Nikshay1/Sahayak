@@ -1,4 +1,4 @@
-# Sahayak Dockerfile
+# Sahayak Dockerfile - GEMINI VERSION
 FROM python:3.11-slim
 
 # Set environment variables
@@ -14,11 +14,15 @@ RUN apt-get update && apt-get install -y \
     gcc \
     libpq-dev \
     ffmpeg \
+    libsndfile1 \
     && rm -rf /var/lib/apt/lists/*
 
 # Install Python dependencies
 COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
+
+# Pre-download the Whisper model during build (optional but faster startup)
+# RUN python -c "from faster_whisper import WhisperModel; WhisperModel('base', device='cpu', compute_type='int8')"
 
 # Copy application code
 COPY . .

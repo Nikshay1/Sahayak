@@ -1,6 +1,6 @@
 """
 Sahayak Configuration Settings
-Phase 1: Foundational Setup - System Boundaries & Stack Locking
+Updated for Google Gemini
 """
 
 from pydantic_settings import BaseSettings
@@ -16,35 +16,40 @@ class Settings(BaseSettings):
     ENVIRONMENT: str = "development"
     
     # Database (PostgreSQL for ACID compliance)
-    DATABASE_URL: str = "postgresql://sahayak:password@localhost:5432/sahayak_db"
+    DATABASE_URL: str = "postgresql://sahayak:sahayak_password@db:5432/sahayak_db"
     
     # Telephony Provider (Twilio/Exotel/Bland AI)
-    TELEPHONY_PROVIDER: str = "twilio"  # Options: twilio, exotel, bland
+    TELEPHONY_PROVIDER: str = "twilio"
     TWILIO_ACCOUNT_SID: Optional[str] = None
     TWILIO_AUTH_TOKEN: Optional[str] = None
     TWILIO_PHONE_NUMBER: Optional[str] = None
     
-    # OpenAI (GPT-4o for intent, Whisper for STT)
-    OPENAI_API_KEY: str = ""
-    OPENAI_MODEL: str = "gpt-4o"
-    WHISPER_MODEL: str = "whisper-1"
+    # ============== GEMINI CONFIG (NEW!) ==============
+    GEMINI_API_KEY: str = ""
+    GEMINI_MODEL: str = "gemini-1.5-flash"  # Fast and cheap! Or use "gemini-1.5-pro"
+    
+    # ============== LOCAL WHISPER CONFIG ==============
+    # Using faster-whisper locally (FREE!)
+    WHISPER_MODEL_SIZE: str = "base"  # Options: tiny, base, small, medium, large
+    WHISPER_DEVICE: str = "cuda"  # Use "cuda" if you have NVIDIA GPU
+    WHISPER_COMPUTE_TYPE: str = "int8"  # Use "float16" for GPU
     
     # Voice Processing
-    SILENCE_THRESHOLD_SECONDS: float = 1.5  # Wait 1.5s before assuming user finished
-    CONFIDENCE_THRESHOLD: float = 0.85  # Below this triggers clarification
-    SAFE_REFUSAL_THRESHOLD: float = 0.90  # Below 90% = explicit refusal
+    SILENCE_THRESHOLD_SECONDS: float = 1.5
+    CONFIDENCE_THRESHOLD: float = 0.85
+    SAFE_REFUSAL_THRESHOLD: float = 0.90
     
     # Wallet Rules
     MAX_TRANSACTION_AMOUNT: int = 2000  # ₹2000 hard cap
     DEFAULT_CURRENCY: str = "INR"
     
-    # Supported Actions (System Boundaries)
+    # Supported Actions
     SUPPORTED_INTENTS: list = ["ORDER_MEDICINE", "CHECK_BALANCE", "ORDER_STATUS"]
     UNSUPPORTED_INTENTS: list = ["EMERGENCY", "BANKING", "GENERAL_CHAT"]
     
     # WhatsApp/SMS Notifications
-    WHATSAPP_ENABLED: bool = True
-    SMS_ENABLED: bool = True
+    WHATSAPP_ENABLED: bool = False
+    SMS_ENABLED: bool = False
     
     class Config:
         env_file = ".env"

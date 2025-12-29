@@ -1,27 +1,53 @@
 """
-Speech-to-Text Service
-Uses OpenAI Whisper for best dialect/accent handling
-Phase 2: Voice Intake
+Speech-to-Text Service - LOCAL WHISPER VERSION
+Uses faster-whisper for FREE local transcription!
+No API costs! Works offline!
 """
 
 import io
+import os
+import tempfile
 from typing import Optional
-from openai import AsyncOpenAI
+from faster_whisper import WhisperModel
 from src.config.settings import settings
 import logging
 
 logger = logging.getLogger(__name__)
 
+# Global model instance (loaded once)
+_whisper_model = None
+
+
+def get_whisper_model() -> WhisperModel:
+    """
+    Get or create the Whisper model (singleton pattern)
+    Model is downloaded once and cached locally
+    """
+    global _whisper_model
+    
+    if _whisper_model is None:
+        logger.info(f"Loading Whisper model: {settings.WHISPER_MODEL_SIZE}")
+        logger.info(f"Device: {settings.WHISPER_DEVICE}, Compute: {settings.WHISPER_COMPUTE_TYPE}")
+        
+        _whisper_model = WhisperModel(
+            settings.WHISPER_MODEL_SIZE,
+            device=settings.WHISPER_DEVICE,
+            compute_type=settings.WHISPER_COMPUTE_TYPE
+        )
+        
+        logger.info("Whisper model loaded successfully!")
+    
+    return _whisper_model
+
 
 class SpeechToTextService:
     """
-    Speech-to-Text using OpenAI Whisper
+    Speech-to-Text using faster-whisper (LOCAL & FREE!)
     Best for Indian dialect and accent handling
     """
     
     def __init__(self):
-        self.client = AsyncOpenAI(api_key=settings.OPENAI_API_KEY)
-        self.model = settings.WHISPER_MODEL
+        self.model = get_whisper_model()
         
     async def transcribe(
         self,
@@ -36,52 +62,70 @@ class SpeechToTextService:
             audio_data: Raw audio bytes
             language_hint: Expected language (hi=Hindi, en=English)
             prompt_hint: Optional prompt to guide transcription
-                        (e.g., "medicine names like Shelcal, Atorvastatin")
         
         Returns:
             Dict with text, confidence, language
         """
         try:
-            # Create file-like object from bytes
-            audio_file = io.BytesIO(audio_data)
-            audio_file.name = "audio.wav"  # Whisper needs a filename
+            # Write audio to temporary file (faster-whisper needs a file)
+            with tempfile.NamedTemporaryFile(suffix=".wav", delete=False) as tmp_file:
+                tmp_file.write(audio_data)
+                tmp_path = tmp_file.name
             
-            # Build transcription request
-            transcription_params = {
-                "model": self.model,
-                "file": audio_file,
-                "response_format": "verbose_json",  # Get detailed response
-            }
-            
-            # Add language hint if provided
-            if language_hint:
-                transcription_params["language"] = language_hint
-            
-            # Add prompt hint for better medicine name recognition
-            if prompt_hint:
-                transcription_params["prompt"] = prompt_hint
-            else:
-                # Default prompt for medicine context
-                transcription_params["prompt"] = (
-                    "This is a conversation about ordering medicines. "
-                    "Common medicine names include: Shelcal, Atorvastatin, Metformin, "
-                    "Amlodipine, Crocin, Pantoprazole, Thyronorm. "
-                    "The speaker may use Hindi words like 'dawai', 'goli', 'tablet'."
+            try:
+                # Build initial prompt for better medicine recognition
+                initial_prompt = prompt_hint or (
+                    "Medicines: Shelcal, Atorvastatin, Metformin, Crocin, "
+                    "Thyronorm, Amlodipine. Hindi words: dawai, goli, tablet, "
+                    "calcium, heart medicine, sugar ki goli, BP tablet."
                 )
-            
-            response = await self.client.audio.transcriptions.create(
-                **transcription_params
-            )
-            
-            logger.info(f"Transcribed: '{response.text}' (lang: {response.language})")
-            
-            return {
-                "text": response.text,
-                "language": response.language,
-                "duration": response.duration,
-                "confidence": self._estimate_confidence(response),
-                "segments": getattr(response, 'segments', [])
-            }
+                
+                # Transcribe
+                segments, info = self.model.transcribe(
+                    tmp_path,
+                    language=language_hint if language_hint else None,
+                    initial_prompt=initial_prompt,
+                    beam_size=5,
+                    best_of=5,
+                    temperature=0.0,  # More deterministic
+                    condition_on_previous_text=True,
+                    vad_filter=True,  # Voice activity detection
+                    vad_parameters=dict(
+                        min_silence_duration_ms=500,
+                        speech_pad_ms=400,
+                    )
+                )
+                
+                # Combine all segments
+                full_text = ""
+                total_confidence = 0.0
+                segment_count = 0
+                
+                for segment in segments:
+                    full_text += segment.text + " "
+                    # Approximate confidence from no_speech_prob
+                    segment_confidence = 1.0 - (segment.no_speech_prob or 0.0)
+                    total_confidence += segment_confidence
+                    segment_count += 1
+                
+                # Calculate average confidence
+                avg_confidence = total_confidence / max(segment_count, 1)
+                
+                full_text = full_text.strip()
+                
+                logger.info(f"Transcribed: '{full_text}' (lang: {info.language}, conf: {avg_confidence:.2f})")
+                
+                return {
+                    "text": full_text,
+                    "language": info.language,
+                    "language_probability": info.language_probability,
+                    "duration": info.duration,
+                    "confidence": avg_confidence,
+                }
+                
+            finally:
+                # Clean up temp file
+                os.unlink(tmp_path)
             
         except Exception as e:
             logger.error(f"Transcription failed: {e}")
@@ -92,24 +136,6 @@ class SpeechToTextService:
                 "confidence": 0.0,
                 "error": str(e)
             }
-    
-    def _estimate_confidence(self, response) -> float:
-        """
-        Estimate confidence from Whisper response
-        Whisper doesn't directly provide confidence, so we estimate
-        """
-        # If we have segments with confidence scores
-        if hasattr(response, 'segments') and response.segments:
-            confidences = []
-            for segment in response.segments:
-                if hasattr(segment, 'no_speech_prob'):
-                    # Lower no_speech_prob = higher confidence
-                    confidences.append(1 - segment.no_speech_prob)
-            if confidences:
-                return sum(confidences) / len(confidences)
-        
-        # Default to high confidence if transcription succeeded
-        return 0.9 if response.text else 0.0
 
 
 class TranscriptionEnhancer:
@@ -146,21 +172,16 @@ class TranscriptionEnhancer:
         }
     
     def enhance(self, text: str) -> str:
-        """
-        Enhance transcription for better intent parsing
-        """
+        """Enhance transcription for better intent parsing"""
         text = text.lower().strip()
         
-        # Apply corrections
         for wrong, correct in self.corrections.items():
             text = text.replace(wrong, correct)
         
         return text
     
     def extract_medicine_hints(self, text: str) -> list:
-        """
-        Extract potential medicine names from common aliases
-        """
+        """Extract potential medicine names from common aliases"""
         text_lower = text.lower()
         hints = []
         

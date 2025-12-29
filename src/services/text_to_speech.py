@@ -1,12 +1,12 @@
 """
-Text-to-Speech Service
-For generating voice responses
+Text-to-Speech Service - gTTS VERSION (FREE!)
+Uses Google's Text-to-Speech which is free for reasonable usage
 """
 
 import io
 from typing import Optional
-from openai import AsyncOpenAI
-from src.config.settings import settings
+from gtts import gTTS
+from pydub import AudioSegment
 import logging
 
 logger = logging.getLogger(__name__)
@@ -14,45 +14,42 @@ logger = logging.getLogger(__name__)
 
 class TextToSpeechService:
     """
-    Text-to-Speech using OpenAI TTS
-    Generates natural-sounding voice for elderly users
+    Text-to-Speech using gTTS (FREE!)
+    Generates natural-sounding voice
     """
     
     def __init__(self):
-        self.client = AsyncOpenAI(api_key=settings.OPENAI_API_KEY)
+        pass  # No initialization needed for gTTS
         
     async def synthesize(
         self,
         text: str,
-        voice: str = "alloy",  # Options: alloy, echo, fable, onyx, nova, shimmer
-        speed: float = 0.9,  # Slightly slower for elderly
-        response_format: str = "mp3"
+        language: str = "hi",  # Hindi default
+        slow: bool = True,  # Slower speech for elderly
     ) -> bytes:
         """
         Convert text to speech
         
         Args:
             text: Text to speak
-            voice: Voice model to use
-            speed: Speech speed (0.25 to 4.0), 0.9 is good for elderly
-            response_format: Audio format (mp3, opus, aac, flac)
+            language: Language code (hi=Hindi, en=English)
+            slow: Slower speech (good for elderly)
             
         Returns:
-            Audio bytes
+            Audio bytes (MP3 format)
         """
         try:
-            response = await self.client.audio.speech.create(
-                model="tts-1",  # or "tts-1-hd" for higher quality
-                voice=voice,
-                input=text,
-                speed=speed,
-                response_format=response_format
-            )
+            # Create gTTS object
+            tts = gTTS(text=text, lang=language, slow=slow)
             
-            # Get audio bytes
-            audio_bytes = response.content
+            # Save to bytes buffer
+            audio_buffer = io.BytesIO()
+            tts.write_to_fp(audio_buffer)
+            audio_buffer.seek(0)
             
-            logger.info(f"Generated speech for: '{text[:50]}...' ({len(audio_bytes)} bytes)")
+            audio_bytes = audio_buffer.read()
+            
+            logger.info(f"Generated speech: '{text[:50]}...' ({len(audio_bytes)} bytes)")
             
             return audio_bytes
             
@@ -63,33 +60,45 @@ class TextToSpeechService:
     async def synthesize_hindi(
         self,
         text: str,
-        speed: float = 0.9
+        slow: bool = True
     ) -> bytes:
         """
         Synthesize Hindi/Hinglish text
-        Uses voice that handles Hindi well
         """
-        # Note: OpenAI TTS handles multiple languages
-        # For production, consider dedicated Hindi TTS like Google Cloud TTS
-        return await self.synthesize(
-            text=text,
-            voice="nova",  # Nova handles Hindi reasonably well
-            speed=speed
-        )
+        return await self.synthesize(text=text, language="hi", slow=slow)
+    
+    async def synthesize_english(
+        self,
+        text: str,
+        slow: bool = True
+    ) -> bytes:
+        """
+        Synthesize English text (Indian accent)
+        """
+        # Use 'en-in' for Indian English accent
+        try:
+            tts = gTTS(text=text, lang="en", tld="co.in", slow=slow)
+            audio_buffer = io.BytesIO()
+            tts.write_to_fp(audio_buffer)
+            audio_buffer.seek(0)
+            return audio_buffer.read()
+        except Exception as e:
+            logger.error(f"English TTS failed: {e}")
+            # Fallback to regular English
+            return await self.synthesize(text=text, language="en", slow=slow)
 
 
 class VoiceResponseBuilder:
     """
     Build appropriate voice responses for different scenarios
-    Ensures polite, elderly-friendly communication
     """
     
-    def __init__(self, tts_service: TextToSpeechService):
-        self.tts = tts_service
+    def __init__(self, tts_service: TextToSpeechService = None):
+        self.tts = tts_service or TextToSpeechService()
         
     async def build_greeting(self, user_name: str) -> bytes:
         """Generate personalized greeting"""
-        text = f"Namaste {user_name}. Yes, I am here. How can I help you today?"
+        text = f"Namaste {user_name}. Haan, main yahan hoon. Aaj main aapki kya madad kar sakti hoon?"
         return await self.tts.synthesize_hindi(text)
     
     async def build_confirmation(
@@ -101,9 +110,9 @@ class VoiceResponseBuilder:
     ) -> bytes:
         """Generate order confirmation prompt"""
         text = (
-            f"I can see you usually order {medicine_name}. "
-            f"A strip of {quantity} costs {price} rupees. "
-            f"Shall I order it to your home in {address}?"
+            f"Main dekh sakti hoon ki aap aksar {medicine_name} order karti hain. "
+            f"{quantity} ki strip {price} rupaye ki hai. "
+            f"Kya main ise aapke ghar {address} mein order kar doon?"
         )
         return await self.tts.synthesize_hindi(text)
     
@@ -115,9 +124,9 @@ class VoiceResponseBuilder:
     ) -> bytes:
         """Generate order completion message"""
         text = (
-            f"Done. I have paid {amount} rupees from your wallet. "
-            f"Your new balance is {balance} rupees. "
-            f"The chemist will deliver it by {delivery_time}."
+            f"Ho gaya. Maine aapke wallet se {amount} rupaye pay kar diye hain. "
+            f"Aapka naya balance {balance} rupaye hai. "
+            f"Chemist {delivery_time} tak deliver kar dega."
         )
         return await self.tts.synthesize_hindi(text)
     
@@ -125,15 +134,15 @@ class VoiceResponseBuilder:
         """Generate clarification request"""
         if clarification_type == "medicine_name":
             text = (
-                "I heard you want medicine, but the name wasn't clear. "
-                "Could you say the name of the tablet again?"
+                "Maine suna ki aapko dawai chahiye, lekin naam clear nahi tha. "
+                "Kya aap tablet ka naam dobara bata sakti hain?"
             )
         elif clarification_type == "quantity":
-            text = "How many strips would you like?"
+            text = "Aapko kitni strips chahiye?"
         else:
             text = (
-                "I did not understand clearly. "
-                "Please try saying it again slowly."
+                "Mujhe clear samajh nahi aaya. "
+                "Kripya dhire se dobara boliye."
             )
         
         return await self.tts.synthesize_hindi(text)
@@ -142,18 +151,18 @@ class VoiceResponseBuilder:
         """Generate error messages"""
         if error_type == "insufficient_balance":
             text = (
-                "I'm sorry, but your wallet balance is not enough for this order. "
-                "Please ask your family member to add money to your Sahayak wallet."
+                "Mujhe maaf kijiye, aapke wallet mein itne paise nahi hain. "
+                "Kripya apne parivar ke sadasya se Sahayak wallet mein paise add karne ko kahiye."
             )
         elif error_type == "api_error":
             text = (
-                "I'm having trouble placing your order right now. "
-                "Your money is safe. Please try again in a few minutes."
+                "Mujhe abhi order dene mein dikkat ho rahi hai. "
+                "Aapke paise safe hain. Kripya kuch minute baad try kariye."
             )
         else:
             text = (
-                "I'm sorry, something went wrong. "
-                "Please try again or call your caregiver for help."
+                "Mujhe maaf kijiye, kuch gadbad ho gayi. "
+                "Kripya dobara try kariye ya apne caregiver ko call kariye."
             )
         
         return await self.tts.synthesize_hindi(text)
