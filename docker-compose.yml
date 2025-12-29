@@ -1,0 +1,70 @@
+version: '3.8'
+
+services:
+  app:
+    build: .
+    container_name: sahayak-app
+    ports:
+      - "8000:8000"
+    environment:
+      - DATABASE_URL=postgresql://sahayak:sahayak_password@db:5432/sahayak_db
+      - OPENAI_API_KEY=${OPENAI_API_KEY}
+      - TWILIO_ACCOUNT_SID=${TWILIO_ACCOUNT_SID}
+      - TWILIO_AUTH_TOKEN=${TWILIO_AUTH_TOKEN}
+      - TWILIO_PHONE_NUMBER=${TWILIO_PHONE_NUMBER}
+      - ENVIRONMENT=development
+      - DEBUG=true
+    depends_on:
+      db:
+        condition: service_healthy
+      redis:
+        condition: service_started
+    volumes:
+      - ./src:/app/src
+      - ./scripts:/app/scripts
+    restart: unless-stopped
+
+  db:
+    image: postgres:15-alpine
+    container_name: sahayak-db
+    environment:
+      - POSTGRES_USER=sahayak
+      - POSTGRES_PASSWORD=sahayak_password
+      - POSTGRES_DB=sahayak_db
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    ports:
+      - "5432:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U sahayak -d sahayak_db"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+    restart: unless-stopped
+
+  redis:
+    image: redis:7-alpine
+    container_name: sahayak-redis
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_data:/data
+    restart: unless-stopped
+
+  # Optional: ngrok for exposing webhooks during development
+  ngrok:
+    image: ngrok/ngrok:latest
+    container_name: sahayak-ngrok
+    command: http app:8000
+    environment:
+      - NGROK_AUTHTOKEN=${NGROK_AUTHTOKEN}
+    ports:
+      - "4040:4040"
+    depends_on:
+      - app
+    profiles:
+      - dev
+
+volumes:
+  postgres_data:
+  redis_data:

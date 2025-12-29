@@ -1,0 +1,37 @@
+# Sahayak Environment Configuration
+
+# Application
+APP_NAME=Sahayak
+ENVIRONMENT=development
+DEBUG=true
+
+# Database
+DATABASE_URL=postgresql://sahayak:sahayak_password@localhost:5432/sahayak_db
+
+# OpenAI
+OPENAI_API_KEY=sk-your-openai-api-key-here
+
+# Twilio (Voice)
+TWILIO_ACCOUNT_SID=your-twilio-account-sid
+TWILIO_AUTH_TOKEN=your-twilio-auth-token
+TWILIO_PHONE_NUMBER=+1234567890
+
+# WhatsApp Business API (optional)
+WHATSAPP_ACCESS_TOKEN=your-whatsapp-access-token
+WHATSAPP_PHONE_NUMBER_ID=your-phone-number-id
+WHATSAPP_VERIFY_TOKEN=sahayak_verify
+
+# Voice Settings
+SILENCE_THRESHOLD_SECONDS=1.5
+CONFIDENCE_THRESHOLD=0.85
+SAFE_REFUSAL_THRESHOLD=0.90
+
+# Wallet Settings
+MAX_TRANSACTION_AMOUNT=2000
+
+# Notifications
+WHATSAPP_ENABLED=true
+SMS_ENABLED=true
+
+# ngrok (for development webhooks)
+NGROK_AUTHTOKEN=your-ngrok-auth-token
