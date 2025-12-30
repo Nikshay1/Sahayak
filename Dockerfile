@@ -1,4 +1,4 @@
-# Sahayak Dockerfile - GEMINI VERSION (FIXED!)
+# Sahayak Dockerfile - SIMPLE VERSION
 FROM python:3.11-slim
 
 # Set environment variables
@@ -9,21 +9,11 @@ ENV PYTHONPATH=/app
 # Set work directory
 WORKDIR /app
 
-# Install system dependencies (INCLUDING pkg-config for PyAV!)
+# Install system dependencies (much simpler now!)
 RUN apt-get update && apt-get install -y \
     gcc \
-    g++ \
     libpq-dev \
     ffmpeg \
-    libsndfile1 \
-    pkg-config \
-    libavformat-dev \
-    libavcodec-dev \
-    libavdevice-dev \
-    libavutil-dev \
-    libswscale-dev \
-    libswresample-dev \
-    libavfilter-dev \
     curl \
     && rm -rf /var/lib/apt/lists/*
 

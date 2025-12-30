@@ -1,141 +1,119 @@
 """
-Speech-to-Text Service - LOCAL WHISPER VERSION
-Uses faster-whisper for FREE local transcription!
-No API costs! Works offline!
+Speech-to-Text Service - SIMPLE VERSION
+Uses Google Speech Recognition (FREE!)
+No API key needed for basic usage!
 """
 
 import io
 import os
 import tempfile
 from typing import Optional
-from faster_whisper import WhisperModel
+import speech_recognition as sr
 from src.config.settings import settings
 import logging
 
 logger = logging.getLogger(__name__)
 
-# Global model instance (loaded once)
-_whisper_model = None
-
-
-def get_whisper_model() -> WhisperModel:
-    """
-    Get or create the Whisper model (singleton pattern)
-    Model is downloaded once and cached locally
-    """
-    global _whisper_model
-    
-    if _whisper_model is None:
-        logger.info(f"Loading Whisper model: {settings.WHISPER_MODEL_SIZE}")
-        logger.info(f"Device: {settings.WHISPER_DEVICE}, Compute: {settings.WHISPER_COMPUTE_TYPE}")
-        
-        _whisper_model = WhisperModel(
-            settings.WHISPER_MODEL_SIZE,
-            device=settings.WHISPER_DEVICE,
-            compute_type=settings.WHISPER_COMPUTE_TYPE
-        )
-        
-        logger.info("Whisper model loaded successfully!")
-    
-    return _whisper_model
-
 
 class SpeechToTextService:
     """
-    Speech-to-Text using faster-whisper (LOCAL & FREE!)
-    Best for Indian dialect and accent handling
+    Speech-to-Text using Google Speech Recognition (FREE!)
+    Simple, works instantly, no complex setup!
     """
     
     def __init__(self):
-        self.model = get_whisper_model()
+        self.recognizer = sr.Recognizer()
         
     async def transcribe(
         self,
         audio_data: bytes,
-        language_hint: str = "hi",
+        language_hint: str = "hi-IN",
         prompt_hint: Optional[str] = None
     ) -> dict:
         """
         Transcribe audio to text
         
         Args:
-            audio_data: Raw audio bytes
-            language_hint: Expected language (hi=Hindi, en=English)
-            prompt_hint: Optional prompt to guide transcription
+            audio_data: Raw audio bytes (WAV format works best)
+            language_hint: Language code (hi-IN=Hindi, en-IN=Indian English)
+            prompt_hint: Not used in this version
         
         Returns:
             Dict with text, confidence, language
         """
         try:
-            # Write audio to temporary file (faster-whisper needs a file)
+            # Write audio to temporary file
             with tempfile.NamedTemporaryFile(suffix=".wav", delete=False) as tmp_file:
                 tmp_file.write(audio_data)
                 tmp_path = tmp_file.name
             
             try:
-                # Build initial prompt for better medicine recognition
-                initial_prompt = prompt_hint or (
-                    "Medicines: Shelcal, Atorvastatin, Metformin, Crocin, "
-                    "Thyronorm, Amlodipine. Hindi words: dawai, goli, tablet, "
-                    "calcium, heart medicine, sugar ki goli, BP tablet."
-                )
+                # Load audio file
+                with sr.AudioFile(tmp_path) as source:
+                    audio = self.recognizer.record(source)
                 
-                # Transcribe
-                segments, info = self.model.transcribe(
-                    tmp_path,
-                    language=language_hint if language_hint else None,
-                    initial_prompt=initial_prompt,
-                    beam_size=5,
-                    best_of=5,
-                    temperature=0.0,  # More deterministic
-                    condition_on_previous_text=True,
-                    vad_filter=True,  # Voice activity detection
-                    vad_parameters=dict(
-                        min_silence_duration_ms=500,
-                        speech_pad_ms=400,
+                # Try Google Speech Recognition (FREE!)
+                try:
+                    # First try Hindi
+                    text = self.recognizer.recognize_google(
+                        audio, 
+                        language=language_hint
                     )
-                )
+                    detected_language = language_hint
+                    
+                except sr.UnknownValueError:
+                    # If Hindi fails, try English
+                    try:
+                        text = self.recognizer.recognize_google(
+                            audio, 
+                            language="en-IN"
+                        )
+                        detected_language = "en-IN"
+                    except sr.UnknownValueError:
+                        text = ""
+                        detected_language = "unknown"
                 
-                # Combine all segments
-                full_text = ""
-                total_confidence = 0.0
-                segment_count = 0
-                
-                for segment in segments:
-                    full_text += segment.text + " "
-                    # Approximate confidence from no_speech_prob
-                    segment_confidence = 1.0 - (segment.no_speech_prob or 0.0)
-                    total_confidence += segment_confidence
-                    segment_count += 1
-                
-                # Calculate average confidence
-                avg_confidence = total_confidence / max(segment_count, 1)
-                
-                full_text = full_text.strip()
-                
-                logger.info(f"Transcribed: '{full_text}' (lang: {info.language}, conf: {avg_confidence:.2f})")
+                logger.info(f"Transcribed: '{text}' (lang: {detected_language})")
                 
                 return {
-                    "text": full_text,
-                    "language": info.language,
-                    "language_probability": info.language_probability,
-                    "duration": info.duration,
-                    "confidence": avg_confidence,
+                    "text": text,
+                    "language": detected_language,
+                    "confidence": 0.9 if text else 0.0,
+                    "duration": 0,
                 }
                 
             finally:
                 # Clean up temp file
                 os.unlink(tmp_path)
             
+        except sr.RequestError as e:
+            logger.error(f"Google Speech API error: {e}")
+            return {
+                "text": "",
+                "language": "unknown",
+                "confidence": 0.0,
+                "error": f"API error: {e}"
+            }
+            
         except Exception as e:
             logger.error(f"Transcription failed: {e}")
             return {
                 "text": "",
                 "language": "unknown",
-                "duration": 0,
                 "confidence": 0.0,
                 "error": str(e)
             }
+    
+    def transcribe_sync(
+        self,
+        audio_data: bytes,
+        language_hint: str = "hi-IN"
+    ) -> dict:
+        """
+        Synchronous version of transcribe (for non-async contexts)
+        """
+        import asyncio
+        return asyncio.run(self.transcribe(audio_data, language_hint))
 
 
 class TranscriptionEnhancer:
