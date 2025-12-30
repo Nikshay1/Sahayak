@@ -59,13 +59,20 @@ Digital adoption has left the elderly behind. While interfaces have evolved from
 ### 🎙️ Voice-First Intake
 - Telephony/WhatsApp audio as the only input
 - 1.5-second silence detection for elderly speech patterns
-- Hindi/English dialect support via OpenAI Whisper
+- Hindi/English dialect support via Google Speech Recognition (FREE!)
+- Fast transcription with no API keys required
 
 ### 🧠 Deterministic Intent
-- GPT-4o powered intent extraction
+- **Google Gemini 2.5 Flash** powered intent extraction (low-latency, cost-efficient)
 - Strict JSON schema output
 - Confidence-based clarification flows
 - "Safe Refusal" below 90% confidence
+
+### 💬 Natural Voice Responses
+- **gTTS (Google Text-to-Speech)** for natural-sounding audio
+- Slow, clear speech optimized for elderly users
+- Hindi and English language support
+- No complex TTS setup required
 
 ### 💰 Trust Ledger
 - Prepaid closed-loop wallet
@@ -95,14 +102,19 @@ Digital adoption has left the elderly behind. While interfaces have evolved from
 │   └── Audio Streaming & Buffering                               │
 │   ↓                                                             │
 │  🎤 Voice Processing                                            │
-│   ├── OpenAI Whisper (STT)                                      │
+│   ├── Google Speech Recognition (STT) - FREE!                   │
 │   ├── Silence Detection (1.5s threshold)                        │
 │   └── Transcription Enhancement                                 │
 │   ↓                                                             │
 │  🧠 Intent Engine                                               │
-│   ├── GPT-4o Intent Parsing                                     │
+│   ├── Google Gemini 2.5 Flash Intent Parsing                    │
 │   ├── Medicine Resolution (user history)                        │
 │   └── Confidence Scoring & Clarification                        │
+│   ↓                                                             │
+│  💬 Response Generation                                         │
+│   ├── gTTS (Google Text-to-Speech) - FREE!                      │
+│   ├── Slow, clear speech for elderly users                      │
+│   └── Multi-language support (Hindi/English)                    │
 │   ↓                                                             │
 │  ⚙️ Execution Orchestrator                                      │
 │   ├── Wallet Check & Lock                                       │
@@ -116,8 +128,8 @@ Digital adoption has left the elderly behind. While interfaces have evolved from
 │   └── Audit Logs                                                │
 │   ↓                                                             │
 │  📱 Notifications                                               │
-│   ├── SMS Confirmation                                          │
-│   ├── WhatsApp Messages                                         │
+│   ├── SMS Confirmation (Optional)                               │
+│   ├── WhatsApp Messages (Optional)                              │
 │   └── Caregiver Alerts                                          │
 │                                                                 │
 └─────────────────────────────────────────────────────────────────┘
@@ -132,8 +144,12 @@ Digital adoption has left the elderly behind. While interfaces have evolved from
 - Python 3.11+
 - PostgreSQL 15+
 - Docker & Docker Compose (optional)
-- OpenAI API Key
-- Twilio Account (for telephony)
+- Google Gemini API Key (for intent parsing)
+- Twilio Account (for telephony) - *optional, for production use*
+
+**Note:** We use **free services** for STT and TTS:
+- Google Speech Recognition (free, no key needed)
+- gTTS (Google Text-to-Speech, free)
 
 ### Option 1: Docker (Recommended)
 
@@ -145,17 +161,17 @@ cd Sahayak
 # Copy environment file
 cp .env.example .env
 
-# Edit .env with your API keys
+# Edit .env with your API keys (only GEMINI_API_KEY is required)
 nano .env
 
-# Start all services
+# Start all services (PostgreSQL, Redis, App)
 docker-compose up -d
 
-# Seed demo data
-docker-compose exec app python scripts/seed_demo_user.py
-
-# View logs
+# Check logs
 docker-compose logs -f app
+
+# Run demo to test the system
+docker-compose exec app python scripts/demo_simulation.py
 ```
 
 ### Option 2: Local Development
@@ -177,7 +193,10 @@ createdb sahayak_db
 
 # Copy and configure environment
 cp .env.example .env
-# Edit .env with your configuration
+# Edit .env - only GEMINI_API_KEY is required
+# For local dev:
+# DATABASE_URL=postgresql://localhost/sahayak_db
+# GEMINI_API_KEY=your_key_here
 
 # Run database migrations
 alembic upgrade head
@@ -187,27 +206,34 @@ python scripts/seed_demo_user.py
 
 # Start the server
 uvicorn src.main:app --reload
+
+# In another terminal, run the demo
+python scripts/demo_simulation.py
 ```
 
 ### Expose Webhooks (Development)
 
 ```bash
-# Using ngrok
+# Using ngrok for Twilio integration
 ngrok http 8000
 
-# Update Twilio webhook URLs with ngrok URL
+# Copy the ngrok URL and configure in Twilio:
 # Voice URL: https://your-ngrok-url.ngrok.io/webhooks/twilio/voice/incoming
+# OR use the demo script which works without Twilio setup
 ```
 
 ---
 
 ## 🎬 Demo
 
-### Run the Demo Simulation
+### Run the Demo Simulation (No Twilio Setup Needed!)
 
 ```bash
-# Interactive demo
+# Interactive demo - works without any telephony setup
 python scripts/demo_simulation.py
+
+# Or via Docker
+docker-compose exec app python scripts/demo_simulation.py
 
 # Select scenario:
 # 1. Full Order Flow (Grandmother Test)
@@ -275,17 +301,18 @@ Once the server is running, access the interactive API docs:
 
 ### Environment Variables
 
-| Variable | Description | Default |
-|----------|-------------|---------|
-| `DATABASE_URL` | PostgreSQL connection URL | Required |
-| `OPENAI_API_KEY` | OpenAI API key | Required |
-| `TWILIO_ACCOUNT_SID` | Twilio Account SID | Required for calls |
-| `TWILIO_AUTH_TOKEN` | Twilio Auth Token | Required for calls |
-| `TWILIO_PHONE_NUMBER` | Twilio phone number | Required for calls |
-| `SILENCE_THRESHOLD_SECONDS` | Silence detection threshold | 1.5 |
-| `CONFIDENCE_THRESHOLD` | Intent confidence threshold | 0.85 |
-| `SAFE_REFUSAL_THRESHOLD` | Refusal threshold | 0.90 |
-| `MAX_TRANSACTION_AMOUNT` | Max transaction in ₹ | 2000 |
+| Variable | Description | Default | Required |
+|----------|-------------|---------|----------|
+| `GEMINI_API_KEY` | Google Gemini API key | - | ✅ Yes |
+| `DATABASE_URL` | PostgreSQL connection URL | `postgresql://sahayak:sahayak_password@db:5432/sahayak_db` | ✅ Yes |
+| `GEMINI_MODEL` | Gemini model to use | `gemini-2.5-flash` | ❌ No |
+| `SILENCE_THRESHOLD_SECONDS` | Silence detection threshold | 1.5 | ❌ No |
+| `CONFIDENCE_THRESHOLD` | Intent confidence threshold | 0.85 | ❌ No |
+| `SAFE_REFUSAL_THRESHOLD` | Refusal threshold | 0.90 | ❌ No |
+| `MAX_TRANSACTION_AMOUNT` | Max transaction in ₹ | 2000 | ❌ No |
+| `TWILIO_ACCOUNT_SID` | Twilio Account SID | - | ❌ No (only for production) |
+| `TWILIO_AUTH_TOKEN` | Twilio Auth Token | - | ❌ No (only for production) |
+| `TWILIO_PHONE_NUMBER` | Twilio phone number | - | ❌ No (only for production) |
 
 ### Supported Intents
 
@@ -296,11 +323,15 @@ Once the server is running, access the interactive API docs:
 | `ORDER_STATUS` | Check order status | "Mera order kahan hai" |
 | `UNKNOWN` | Unrecognized intent | Triggers clarification |
 
-### Unsupported Actions (By Design)
+### Tech Stack
 
-- Emergency services (redirects to 112)
-- Banking transfers
-- General chat
+- **LLM:** Google Gemini 1.5 Flash (cost-efficient, fast)
+- **STT:** Google Speech Recognition (free, no setup)
+- **TTS:** gTTS - Google Text-to-Speech (free, natural sounding)
+- **API Framework:** FastAPI
+- **Database:** PostgreSQL + SQLAlchemy (async)
+- **Telephony:** Twilio (optional, for production)
+- **Task Queue:** Redis (optional, for background jobs)
 
 ---
 
@@ -335,12 +366,14 @@ pytest tests/test_wallet.py::TestWalletLedger::test_check_and_lock_success -v
 
 - [ ] Set `ENVIRONMENT=production`
 - [ ] Set `DEBUG=false`
-- [ ] Configure real Twilio credentials
+- [ ] Configure real Twilio credentials (if needed)
 - [ ] Set up PostgreSQL with proper backups
+- [ ] Set up Google Gemini API quotas and billing
 - [ ] Configure SSL/TLS
-- [ ] Set up monitoring (Sentry, etc.)
+- [ ] Set up monitoring (Sentry, DataDog, etc.)
 - [ ] Configure rate limiting
 - [ ] Set up log aggregation
+- [ ] Enable audit logging
 
 ### Deploy with Docker
 
@@ -353,14 +386,10 @@ docker run -d \
   --name sahayak \
   -p 8000:8000 \
   -e DATABASE_URL=postgresql://... \
-  -e OPENAI_API_KEY=... \
+  -e GEMINI_API_KEY=... \
   -e ENVIRONMENT=production \
   sahayak:prod
 ```
-
-### Kubernetes (Coming Soon)
-
-Helm charts and Kubernetes manifests will be added for production deployments.
 
 ---
 
@@ -372,23 +401,18 @@ Helm charts and Kubernetes manifests will be added for production deployments.
 - Intent detection accuracy
 - Average call duration
 - Wallet transaction success rate
-- API failure rate
+- API failure rate (Gemini, STT, TTS)
 - Refund frequency
+- Cost per transaction
 
-### Log Structure
+### Key Services & Dependencies
 
-All calls generate structured logs:
-
-```json
-{
-  "call_id": "call_12345",
-  "input_audio_url": "s3://...",
-  "transcribed_text": "Send Crocin",
-  "intent_detected": "ORDER_MEDICINE",
-  "wallet_status": "APPROVED",
-  "execution_status": "SUCCESS"
-}
-```
+- **Google Gemini 1.5 Flash:** Intent parsing, voice responses
+- **Google Speech Recognition:** Audio transcription
+- **gTTS:** Text-to-speech synthesis
+- **PostgreSQL:** Data persistence
+- **Redis:** Session/queue management (optional)
+- **Twilio:** Telephony integration (optional)
 
 ---
 
@@ -402,13 +426,13 @@ We welcome contributions! Please see our Contributing Guide.
 # Install dev dependencies
 pip install -r requirements.txt
 
-# Install pre-commit hooks
-pre-commit install
-
 # Run linting
 black src tests
 isort src tests
 flake8 src tests
+
+# Run tests
+pytest tests/ -v --cov=src
 ```
 
 ### Code Style
@@ -418,6 +442,7 @@ flake8 src tests
 - Follow PEP 8 guidelines
 - Write docstrings for all functions
 - Add type hints
+- Aim for 80%+ test coverage
 
 ---
 
