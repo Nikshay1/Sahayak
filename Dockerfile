@@ -1,4 +1,4 @@
-# Sahayak Dockerfile - GEMINI VERSION
+# Sahayak Dockerfile - GEMINI VERSION (FIXED!)
 FROM python:3.11-slim
 
 # Set environment variables
@@ -9,20 +9,28 @@ ENV PYTHONPATH=/app
 # Set work directory
 WORKDIR /app
 
-# Install system dependencies
+# Install system dependencies (INCLUDING pkg-config for PyAV!)
 RUN apt-get update && apt-get install -y \
     gcc \
+    g++ \
     libpq-dev \
     ffmpeg \
     libsndfile1 \
+    pkg-config \
+    libavformat-dev \
+    libavcodec-dev \
+    libavdevice-dev \
+    libavutil-dev \
+    libswscale-dev \
+    libswresample-dev \
+    libavfilter-dev \
+    curl \
     && rm -rf /var/lib/apt/lists/*
 
 # Install Python dependencies
 COPY requirements.txt .
+RUN pip install --no-cache-dir --upgrade pip
 RUN pip install --no-cache-dir -r requirements.txt
-
-# Pre-download the Whisper model during build (optional but faster startup)
-# RUN python -c "from faster_whisper import WhisperModel; WhisperModel('base', device='cpu', compute_type='int8')"
 
 # Copy application code
 COPY . .
@@ -36,7 +44,7 @@ USER appuser
 EXPOSE 8000
 
 # Health check
-HEALTHCHECK --interval=30s --timeout=10s --start-period=5s --retries=3 \
+HEALTHCHECK --interval=30s --timeout=10s --start-period=60s --retries=3 \
     CMD curl -f http://localhost:8000/health || exit 1
 
 # Run the application
